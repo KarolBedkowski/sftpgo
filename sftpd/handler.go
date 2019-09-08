@@ -50,13 +50,14 @@ func (c Connection) Log(level logger.LogLevel, sender string, format string, v .
 func (c Connection) Fileread(request *sftp.Request) (io.ReaderAt, error) {
 	updateConnectionActivity(c.ID)
 
-	if !c.User.HasPerm(dataprovider.PermDownload) {
-		return nil, sftp.ErrSshFxPermissionDenied
-	}
-
 	p, err := c.buildPath(request.Filepath)
 	if err != nil {
 		return nil, sftp.ErrSshFxNoSuchFile
+	}
+
+	c.Log(logger.LevelInfo, logSender, "path: %v", p)
+	if !c.User.HasPermForPath(dataprovider.PermDownload, p) {
+		return nil, sftp.ErrSshFxPermissionDenied
 	}
 
 	c.lock.Lock()
@@ -96,13 +97,13 @@ func (c Connection) Fileread(request *sftp.Request) (io.ReaderAt, error) {
 // Filewrite handles the write actions for a file on the system.
 func (c Connection) Filewrite(request *sftp.Request) (io.WriterAt, error) {
 	updateConnectionActivity(c.ID)
-	if !c.User.HasPerm(dataprovider.PermUpload) {
-		return nil, sftp.ErrSshFxPermissionDenied
-	}
-
 	p, err := c.buildPath(request.Filepath)
 	if err != nil {
 		return nil, sftp.ErrSshFxNoSuchFile
+	}
+
+	if !c.User.HasPermForPath(dataprovider.PermUpload, p) {
+		return nil, sftp.ErrSshFxPermissionDenied
 	}
 
 	filePath := p
@@ -208,7 +209,7 @@ func (c Connection) Filelist(request *sftp.Request) (sftp.ListerAt, error) {
 
 	switch request.Method {
 	case "List":
-		if !c.User.HasPerm(dataprovider.PermListItems) {
+		if !c.User.HasPermForPath(dataprovider.PermListItems, p) {
 			return nil, sftp.ErrSshFxPermissionDenied
 		}
 
@@ -222,7 +223,7 @@ func (c Connection) Filelist(request *sftp.Request) (sftp.ListerAt, error) {
 
 		return listerAt(files), nil
 	case "Stat":
-		if !c.User.HasPerm(dataprovider.PermListItems) {
+		if !c.User.HasPermForPath(dataprovider.PermListItems, p) {
 			return nil, sftp.ErrSshFxPermissionDenied
 		}
 
@@ -260,6 +261,13 @@ func (c Connection) handleSFTPRename(sourcePath string, targetPath string) error
 	if !c.User.HasPerm(dataprovider.PermRename) {
 		return sftp.ErrSshFxPermissionDenied
 	}
+	// Rename is (~) equal to download and upload file for given dirs; so check this too
+	if !c.User.HasPermForPath(dataprovider.PermDownload, sourcePath) {
+		return sftp.ErrSshFxPermissionDenied
+	}
+	if !c.User.HasPermForPath(dataprovider.PermUpload, targetPath) {
+		return sftp.ErrSshFxPermissionDenied
+	}
 	if err := os.Rename(sourcePath, targetPath); err != nil {
 		c.Log(logger.LevelError, logSender, "failed to rename file, source: %#v target: %#v: %v", sourcePath, targetPath, err)
 		return sftp.ErrSshFxFailure
@@ -270,7 +278,7 @@ func (c Connection) handleSFTPRename(sourcePath string, targetPath string) error
 }
 
 func (c Connection) handleSFTPRmdir(path string) error {
-	if !c.User.HasPerm(dataprovider.PermDelete) {
+	if !c.User.HasPermForPath(dataprovider.PermDelete, path) {
 		return sftp.ErrSshFxPermissionDenied
 	}
 
@@ -296,6 +304,12 @@ func (c Connection) handleSFTPSymlink(sourcePath string, targetPath string) erro
 	if !c.User.HasPerm(dataprovider.PermCreateSymlinks) {
 		return sftp.ErrSshFxPermissionDenied
 	}
+	if !c.User.HasPermForPath(dataprovider.PermDownload, sourcePath) {
+		return sftp.ErrSshFxPermissionDenied
+	}
+	if !c.User.HasPermForPath(dataprovider.PermUpload, targetPath) {
+		return sftp.ErrSshFxPermissionDenied
+	}
 	if err := os.Symlink(sourcePath, targetPath); err != nil {
 		c.Log(logger.LevelWarn, logSender, "failed to create symlink %#v -> %#v: %v", sourcePath, targetPath, err)
 		return sftp.ErrSshFxFailure
@@ -306,7 +320,7 @@ func (c Connection) handleSFTPSymlink(sourcePath string, targetPath string) erro
 }
 
 func (c Connection) handleSFTPMkdir(path string) error {
-	if !c.User.HasPerm(dataprovider.PermCreateDirs) {
+	if !c.User.HasPermForPath(dataprovider.PermCreateDirs, path) {
 		return sftp.ErrSshFxPermissionDenied
 	}
 
@@ -319,7 +333,7 @@ func (c Connection) handleSFTPMkdir(path string) error {
 }
 
 func (c Connection) handleSFTPRemove(path string) error {
-	if !c.User.HasPerm(dataprovider.PermDelete) {
+	if !c.User.HasPermForPath(dataprovider.PermDelete, path) {
 		return sftp.ErrSshFxPermissionDenied
 	}
 
@@ -352,7 +366,7 @@ func (c Connection) handleSFTPUploadToNewFile(requestPath, filePath string) (io.
 	}
 
 	if _, err := os.Stat(filepath.Dir(requestPath)); os.IsNotExist(err) {
-		if !c.User.HasPerm(dataprovider.PermCreateDirs) {
+		if !c.User.HasPermForPath(dataprovider.PermCreateDirs, requestPath) {
 			return nil, sftp.ErrSshFxPermissionDenied
 		}
 	}

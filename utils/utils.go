@@ -86,3 +86,40 @@ func SetPathPermissions(path string, uid int, gid int) {
 func GetAppVersion() VersionInfo {
 	return versionInfo
 }
+
+// CheckPermissinoForPath check is permission for given folder is in user's
+// permission list.
+//
+// Each permissions in list should be in form "<path>:<permission>" or
+// simple "permission" (without path) for global settings.
+//
+// Path is defined as relative do home dir (/ is root for home dir).
+// Permissions for subdirs are inherited from parents.
+//
+// Permission "*" is equal "All permission granted".
+func CheckPermissinoForPath(permission string, path string, permissions []string) bool {
+	// longestMatch keep longest permission path that match given path
+	longestMatch := 0
+	match := false
+	for _, p := range permissions {
+		pPath := "/"
+		var pPerm string
+		if strings.ContainsRune(p, ':') {
+			// split permission into [<path> <permission>]
+			e := strings.Split(p, ":")
+			pPath = strings.TrimSpace(e[0])
+			pPerm = strings.TrimSpace(e[1])
+		} else {
+			pPerm = strings.TrimSpace(p)
+		}
+
+		if strings.HasPrefix(path, pPath) {
+			matchLen := len(pPath)
+			if (pPerm == permission || pPerm == "*") && longestMatch <= matchLen {
+				longestMatch = matchLen
+				match = true
+			}
+		}
+	}
+	return match
+}

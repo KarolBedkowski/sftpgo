@@ -75,6 +75,13 @@ func (u *User) HasPerm(permission string) bool {
 	return utils.IsStringInSlice(permission, u.Permissions)
 }
 
+// HasPermForPath returns true if the user has the given permission or any permission for
+// given path; path is relative path to user home
+func (u *User) HasPermForPath(permission string, path string) bool {
+	path = u.GetRelativePath(path)
+	return utils.CheckPermissinoForPath(permission, path, u.Permissions)
+}
+
 // GetPermissionsAsJSON returns the permissions as json byte array
 func (u *User) GetPermissionsAsJSON() ([]byte, error) {
 	return json.Marshal(u.Permissions)
